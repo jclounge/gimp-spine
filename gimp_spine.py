@@ -1,5 +1,39 @@
 #!/usr/bin/env python
 '''
+Get the latest gimp_spine.py script:
+https://github.com/clofresh/gimp-spine
+
+Copyright (c) 2014, Carlo Cabanilla <carlo.cabanilla@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of its contributors may be
+used to endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER AND CONTRIBUTORS ''AS IS''
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+'''
+
+'''
 Exports layers to images and outputs a Spine JSON file
 http://esotericsoftware.com/spine-json-format
 
@@ -14,7 +48,7 @@ import os.path
 import gimpfu
 from gimp import pdb
 
-def spine_export(img, active_layer, compression, dir_name):
+def spine_export(img, active_layer, compression, dir_name, json_filename, export_visible_only, reverse_draw_order):
     ''' Plugin entry point
     '''
 
@@ -31,16 +65,18 @@ def spine_export(img, active_layer, compression, dir_name):
     # Iterate through the layers, extracting their info into the JSON output
     # and saving the layers as individual images
     for layer in img.layers:
-        if layer.visible:
-            to_save = process_layer(img, layer, slots, attachments)
-            save_layers(img, to_save, compression, dir_name)
+    	if (layer.visible or not(export_visible_only)):
+        	to_save = process_layer(img, layer, slots, attachments, reverse_draw_order)
+        	save_layers(img, to_save, compression, dir_name)
 
     # Write the JSON output
-    name = os.path.splitext(os.path.basename(img.filename))[0]
-    with open(os.path.join(dir_name, '%s.json' % name), 'w') as json_file:
+    if not json_filename:
+        json_filename = os.path.splitext(os.path.basename(img.filename))[0]
+
+    with open(os.path.join(dir_name, '%s.json' % json_filename), 'w') as json_file:
         json.dump(output, json_file)
 
-def process_layer(img, layer, slots, attachments):
+def process_layer(img, layer, slots, attachments, reverse_draw_order):
     ''' Extracts the Spine info from each layer, recursing as necessary on
         layer groups. Returns all the layers it processed in a flat list.
     '''
@@ -49,15 +85,22 @@ def process_layer(img, layer, slots, attachments):
     # If this layer is a layer has sublayers, recurse into them
     if hasattr(layer, 'layers'):
         for sublayer in layer.layers:
-            processed.extend(process_layer(img, sublayer, slots, attachments))
+            processed.extend(process_layer(img, sublayer, slots, attachments,reverse_draw_order))
     else:
         layer_name = layer.name
 
-        slots.append({
-            'name': layer_name,
-            'bone': 'root',
-            'attachment': layer_name,
-        })
+        if reverse_draw_order:
+            slots.append({
+                'name': layer_name,
+                'bone': 'root',
+                'attachment': layer_name,
+            })
+        else:
+            slots.insert(0, {
+                'name': layer_name,
+                'bone': 'root',
+                'attachment': layer_name,
+            })
         x, y = layer.offsets
 
         # Compensate for GIMP using the top left as the origin, vs Spine
@@ -128,9 +171,13 @@ gimpfu.register(
     # imagetypes
     "*",
     # params
-    [
+    [   
         (gimpfu.PF_ADJUSTMENT, "compression", "PNG Compression level:", 0, (0, 9, 1)),
-        (gimpfu.PF_DIRNAME, "dir", "Directory", "/tmp")
+        (gimpfu.PF_DIRNAME, "dir", "Directory", "/tmp"),
+        (gimpfu.PF_STRING, "json_filename", "JSON filename", ""),
+        (gimpfu.PF_TOGGLE,   "export_visible_only", "Export visible layers only", True),
+        (gimpfu.PF_TOGGLE,   "reverse_draw_order", "Reverse draw order", False)
+        
     ],
     # results
     [],
