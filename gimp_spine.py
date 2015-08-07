@@ -48,9 +48,13 @@ import os.path
 import gimpfu
 from gimp import pdb
 
-def spine_export(img, active_layer, compression, dir_name, json_filename, export_visible_only, reverse_draw_order):
+def spine_export(img, active_layer, compression, dir_name, json_filename, export_visible_only, reverse_draw_order, autocrop_layers):
     ''' Plugin entry point
     '''
+
+    orig_img = img
+    orig_active_layer = pdb.gimp_image_get_active_layer(orig_img)
+    img = pdb.gimp_image_duplicate(orig_img)
 
     # Set up the initial JSON format
     output = {
@@ -65,18 +69,21 @@ def spine_export(img, active_layer, compression, dir_name, json_filename, export
     # Iterate through the layers, extracting their info into the JSON output
     # and saving the layers as individual images
     for layer in img.layers:
-    	if (layer.visible or not(export_visible_only)):
-        	to_save = process_layer(img, layer, slots, attachments, reverse_draw_order)
-        	save_layers(img, to_save, compression, dir_name)
+       if (layer.visible or not(export_visible_only)):
+               to_save = process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers)
+               save_layers(img, to_save, compression, dir_name)
 
     # Write the JSON output
     if not json_filename:
-        json_filename = os.path.splitext(os.path.basename(img.filename))[0]
+        json_filename = os.path.splitext(os.path.basename(orig_img.filename))[0]
 
     with open(os.path.join(dir_name, '%s.json' % json_filename), 'w') as json_file:
         json.dump(output, json_file)
 
-def process_layer(img, layer, slots, attachments, reverse_draw_order):
+    pdb.gimp_image_delete(img)
+    pdb.gimp_image_set_active_layer(orig_img, orig_active_layer)
+
+def process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers):
     ''' Extracts the Spine info from each layer, recursing as necessary on
         layer groups. Returns all the layers it processed in a flat list.
     '''
@@ -85,8 +92,12 @@ def process_layer(img, layer, slots, attachments, reverse_draw_order):
     # If this layer is a layer has sublayers, recurse into them
     if hasattr(layer, 'layers'):
         for sublayer in layer.layers:
-            processed.extend(process_layer(img, sublayer, slots, attachments,reverse_draw_order))
+            processed.extend(process_layer(img, sublayer, slots, attachments, reverse_draw_order, autocrop_layers))
     else:
+        if autocrop_layers:
+            pdb.gimp_image_set_active_layer(img, layer) # note: for some reason we need to do this before autocropping the layer.
+            pdb.plug_in_autocrop_layer(img, layer)
+
         layer_name = layer.name
 
         if reverse_draw_order:
@@ -176,8 +187,8 @@ gimpfu.register(
         (gimpfu.PF_DIRNAME, "dir", "Directory", "/tmp"),
         (gimpfu.PF_STRING, "json_filename", "JSON filename", ""),
         (gimpfu.PF_TOGGLE,   "export_visible_only", "Export visible layers only", True),
-        (gimpfu.PF_TOGGLE,   "reverse_draw_order", "Reverse draw order", False)
-        
+        (gimpfu.PF_TOGGLE,   "reverse_draw_order", "Reverse draw order", False),
+        (gimpfu.PF_TOGGLE,   "autocrop_layers", "Autocrop layers", False)
     ],
     # results
     [],
