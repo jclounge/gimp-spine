@@ -48,7 +48,7 @@ import os.path
 import gimpfu
 from gimp import pdb
 
-def spine_export(img, active_layer, compression, dir_name, json_filename, export_visible_only, reverse_draw_order, autocrop_layers):
+def spine_export(img, active_layer, compression, dir_name, json_filename, export_visible_only, reverse_draw_order, autocrop_layers, padding_amt):
     ''' Plugin entry point
     '''
 
@@ -70,7 +70,7 @@ def spine_export(img, active_layer, compression, dir_name, json_filename, export
     # and saving the layers as individual images
     for layer in img.layers:
        if (layer.visible or not(export_visible_only)):
-               to_save = process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers)
+               to_save = process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers, padding_amt)
                save_layers(img, to_save, compression, dir_name)
 
     # Write the JSON output
@@ -83,7 +83,7 @@ def spine_export(img, active_layer, compression, dir_name, json_filename, export
     pdb.gimp_image_delete(img)
     pdb.gimp_image_set_active_layer(orig_img, orig_active_layer)
 
-def process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers):
+def process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_layers, padding_amt):
     ''' Extracts the Spine info from each layer, recursing as necessary on
         layer groups. Returns all the layers it processed in a flat list.
     '''
@@ -92,11 +92,15 @@ def process_layer(img, layer, slots, attachments, reverse_draw_order, autocrop_l
     # If this layer is a layer has sublayers, recurse into them
     if hasattr(layer, 'layers'):
         for sublayer in layer.layers:
-            processed.extend(process_layer(img, sublayer, slots, attachments, reverse_draw_order, autocrop_layers))
+            processed.extend(process_layer(img, sublayer, slots, attachments, reverse_draw_order, autocrop_layers, padding_amt))
     else:
+        pdb.gimp_image_set_active_layer(img, layer)
+
         if autocrop_layers:
-            pdb.gimp_image_set_active_layer(img, layer) # note: for some reason we need to do this before autocropping the layer.
             pdb.plug_in_autocrop_layer(img, layer)
+
+        if padding_amt > 0:
+            pdb.gimp_layer_resize(layer, layer.width + 2*padding_amt, layer.height + 2*padding_amt, padding_amt, padding_amt)
 
         layer_name = layer.name
 
@@ -188,7 +192,8 @@ gimpfu.register(
         (gimpfu.PF_STRING, "json_filename", "JSON filename", ""),
         (gimpfu.PF_TOGGLE,   "export_visible_only", "Export visible layers only", True),
         (gimpfu.PF_TOGGLE,   "reverse_draw_order", "Reverse draw order", False),
-        (gimpfu.PF_TOGGLE,   "autocrop_layers", "Autocrop layers", False)
+        (gimpfu.PF_TOGGLE,   "autocrop_layers", "Autocrop layers", False),
+        (gimpfu.PF_ADJUSTMENT, "padding_amt", "Padding pixels", 0, (0,100,1))
     ],
     # results
     [],
